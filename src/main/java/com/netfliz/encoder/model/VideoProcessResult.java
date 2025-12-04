@@ -15,4 +15,7 @@ public class VideoProcessResult {
     Long movieId;
     String masterPlaylistUrl;
     List<String> qualities;
+    String sourceResolution;
+    List<String> processedQualities;
+    List<String> skippedQualities;
 }
