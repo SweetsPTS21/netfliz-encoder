@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Data
 @Configuration
-@ConfigurationProperties(prefix = "proxy.cnd")
+@ConfigurationProperties(prefix = "proxy.cdn")
 public class ProxyCndProperties {
     private String streamUrl = "";
 }
