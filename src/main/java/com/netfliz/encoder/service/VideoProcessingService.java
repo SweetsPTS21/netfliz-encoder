@@ -1,5 +1,6 @@
 package com.netfliz.encoder.service;
 
+import com.netfliz.encoder.constant.ProxyCndProperties;
 import com.netfliz.encoder.model.B2FileInfo;
 import com.netfliz.encoder.model.VideoMetadata;
 import com.netfliz.encoder.model.VideoProcessResult;
@@ -26,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class VideoProcessingService {
     private final B2StorageService b2StorageService;
+    private final ProxyCndProperties proxyCndProperties;
     private final String TEMP_DIR = "/tmp/video-processing";
 
     // Các profile chất lượng video
@@ -254,7 +256,7 @@ public class VideoProcessingService {
             String b2Path = String.format("movies/%s/%s/", movieId, quality.getName());
             uploadDirectoryToB2(Paths.get(outputDir), b2Path);
 
-            return b2StorageService.getPresignedUrl(b2Path + "playlist.m3u8");
+            return String.format("%s/%splaylist.m3u8", proxyCndProperties.getStreamUrl(), b2Path);
         } catch (Exception e) {
             log.error("Error encoding quality: {}", quality.getName(), e);
             return null;
@@ -412,7 +414,7 @@ public class VideoProcessingService {
 
         log.info("✓ Đã tạo master playlist với {} chất lượng", playlistUrls.size());
 
-        return b2StorageService.getPresignedUrl(b2Path);
+        return String.format("%s/%s", proxyCndProperties.getStreamUrl(), b2Path);
     }
 
     private VideoQuality findQualityByName(String name) {
