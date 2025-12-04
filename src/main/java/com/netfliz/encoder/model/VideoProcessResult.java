@@ -12,7 +12,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class VideoProcessResult {
-    String movieId;
+    Long movieId;
     String masterPlaylistUrl;
     List<String> qualities;
 }

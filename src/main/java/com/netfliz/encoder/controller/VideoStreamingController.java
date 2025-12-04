@@ -25,10 +25,10 @@ public class VideoStreamingController {
     @PostMapping("/upload")
     public ResponseEntity<UploadVideoResponse> uploadVideo(
             @RequestParam("file") MultipartFile file,
-            @RequestParam("movieId") String movieId,
-            @RequestParam(value = "title", required = false) String title) {
+            @RequestParam("objectId") Long objectId,
+            @RequestParam("objectType") Integer objectType) {
 
-        return ResponseEntity.ok(videoStreamingService.uploadVideo(file, movieId, title));
+        return ResponseEntity.ok(videoStreamingService.uploadVideo(file, objectId, objectType));
     }
 
     /**

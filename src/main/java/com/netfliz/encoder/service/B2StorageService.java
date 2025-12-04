@@ -7,6 +7,7 @@ import com.backblaze.b2.client.contentSources.B2FileContentSource;
 import com.backblaze.b2.client.exceptions.B2Exception;
 import com.backblaze.b2.client.structures.*;
 import com.netfliz.encoder.constant.B2Properties;
+import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -15,13 +16,10 @@ import java.time.Duration;
 
 @Service
 @Slf4j
+@AllArgsConstructor
 public class B2StorageService {
     private final B2Properties b2Properties;
-    B2StorageClient client;
-
-    public B2StorageService(B2Properties b2Properties) {
-        this.b2Properties = b2Properties;
-    }
+    private final B2StorageClient client;
 
     /**
      * Upload file to B2

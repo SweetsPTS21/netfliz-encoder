@@ -33,7 +33,7 @@ public class VideoProcessingService {
             new VideoQuality("360p", 640, 360, "800k", "96k")
     };
 
-    public CompletableFuture<VideoProcessResult> processVideo(MultipartFile file, String movieId) {
+    public CompletableFuture<VideoProcessResult> processVideo(MultipartFile file, Long movieId) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 // Tạo thư mục tạm
@@ -75,7 +75,7 @@ public class VideoProcessingService {
         });
     }
 
-    private String encodeAndUpload(Path input, Path workDir, VideoQuality quality, String movieId) {
+    private String encodeAndUpload(Path input, Path workDir, VideoQuality quality, Long movieId) {
         try {
             String outputDir = workDir.resolve(quality.getName()).toString();
             Files.createDirectories(Paths.get(outputDir));
@@ -121,7 +121,7 @@ public class VideoProcessingService {
         }
     }
 
-    private String createMasterPlaylist(List<String> playlistUrls, String movieId) {
+    private String createMasterPlaylist(List<String> playlistUrls, Long movieId) {
         StringBuilder master = new StringBuilder("#EXTM3U\n#EXT-X-VERSION:3\n\n");
 
         for (int i = 0; i < QUALITIES.length && i < playlistUrls.size(); i++) {

@@ -4,5 +4,5 @@ import com.netfliz.encoder.model.UploadVideoResponse;
 import org.springframework.web.multipart.MultipartFile;
 
 public interface VideoStreamingService {
-    UploadVideoResponse uploadVideo(MultipartFile file, String movieId, String title);
+    UploadVideoResponse uploadVideo(MultipartFile file, Long objectId, Integer objectType);
 }
