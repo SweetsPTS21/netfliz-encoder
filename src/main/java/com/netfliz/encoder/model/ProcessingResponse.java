@@ -9,8 +9,9 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class UploadVideoResponse {
-    private String message;
-    private Long movieId;
+public class ProcessingResponse {
+    private Long objectId;
+    private Integer objectType;
     private String status;
+    private Double progress;
 }

@@ -34,6 +34,22 @@ public class JsonUtils {
         }
     }
 
+    public static JsonNode parse(Object object) {
+        try {
+            return objectMapper.valueToTree(object);
+        } catch (Exception e) {
+            throw new ValidationException("Json parse error: Config is invalid");
+        }
+    }
+
+    public static <T> T parse(JsonNode jsonNode, Class<T> clazz) {
+        try {
+            return objectMapper.treeToValue(jsonNode, clazz);
+        } catch (Exception e) {
+            throw new ValidationException("Json parse error: Config is invalid");
+        }
+    }
+
     public static String serialize(JsonNode jsonNode) {
         if (Objects.isNull(jsonNode)) {
             return StringPools.BLANK;

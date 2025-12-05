@@ -1,5 +1,7 @@
 package com.netfliz.encoder.controller;
 
+import com.netfliz.encoder.model.ProcessingResponse;
+import com.netfliz.encoder.model.StreamInfoResponse;
 import com.netfliz.encoder.model.UploadVideoResponse;
 import com.netfliz.encoder.service.VideoStreamingService;
 import lombok.RequiredArgsConstructor;
@@ -34,21 +36,9 @@ public class VideoStreamingController {
     /**
      * Lấy thông tin streaming của video
      */
-    @GetMapping("/{movieId}/stream-info")
-    public ResponseEntity<Map<String, Object>> getStreamInfo(@PathVariable String movieId) {
-
-        // Lấy từ database
-        String cloudflareWorkerUrl = "https://your-worker.workers.dev";
-        String masterPlaylistUrl = String.format("%s/movies/%s/master.m3u8",
-                cloudflareWorkerUrl, movieId);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("movieId", movieId);
-        response.put("streamUrl", masterPlaylistUrl);
-        response.put("type", "hls");
-        response.put("qualities", new String[]{"1080p", "720p", "480p", "360p"});
-
-        return ResponseEntity.ok(response);
+    @GetMapping("/stream-info")
+    public ResponseEntity<StreamInfoResponse> getStreamInfo(@RequestParam Long objectId, @RequestParam Integer objectType) {
+        return ResponseEntity.ok(videoStreamingService.getStreamInfo(objectId, objectType));
     }
 
     /**
@@ -70,15 +60,8 @@ public class VideoStreamingController {
     /**
      * Check processing status
      */
-    @GetMapping("/{movieId}/status")
-    public ResponseEntity<Map<String, Object>> getProcessingStatus(@PathVariable String movieId) {
-
-        // Check from database or cache
-        Map<String, Object> response = new HashMap<>();
-        response.put("movieId", movieId);
-        response.put("status", "completed"); // processing, completed, failed
-        response.put("progress", 100);
-
-        return ResponseEntity.ok(response);
+    @GetMapping("/status")
+    public ResponseEntity<ProcessingResponse> getProcessingStatus(@RequestParam Long objectId, @RequestParam Integer objectType) {
+        return ResponseEntity.ok(videoStreamingService.getProcessingStatus(objectId, objectType));
     }
 }

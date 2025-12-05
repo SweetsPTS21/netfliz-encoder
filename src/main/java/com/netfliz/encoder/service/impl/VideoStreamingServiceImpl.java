@@ -1,23 +1,27 @@
 package com.netfliz.encoder.service.impl;
 
+import com.netfliz.encoder.constant.CacheKey;
 import com.netfliz.encoder.entity.MovieProcessLogsEntity;
 import com.netfliz.encoder.entity.enums.ProcessLogsObjectType;
 import com.netfliz.encoder.entity.enums.ProcessLogsStatus;
+import com.netfliz.encoder.model.ProcessingResponse;
+import com.netfliz.encoder.model.StreamInfoResponse;
 import com.netfliz.encoder.model.UploadVideoResponse;
 import com.netfliz.encoder.model.VideoProcessResult;
 import com.netfliz.encoder.repository.MovieProcessLogRepository;
+import com.netfliz.encoder.service.RedisService;
 import com.netfliz.encoder.service.VideoProcessingService;
 import com.netfliz.encoder.service.VideoStreamingService;
 import com.netfliz.encoder.utils.JsonUtils;
 import jakarta.validation.ValidationException;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.logging.log4j.util.Strings;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 @Slf4j
@@ -26,11 +30,18 @@ import java.util.concurrent.CompletableFuture;
 public class VideoStreamingServiceImpl implements VideoStreamingService {
     private final VideoProcessingService videoProcessingService;
     private final MovieProcessLogRepository movieProcessLogRepository;
+    private final RedisService redisService;
 
     @Override
     public UploadVideoResponse uploadVideo(MultipartFile file, Long objectId, Integer objectType) {
         validate(file, objectId, objectType);
+        checkProcessingCache(objectId, objectType);
+
         log.info("Receiving video upload for movie: {}", objectId);
+
+        // save processing
+        var logs = initProcessingResult(objectType, objectId);
+        updateProcessingCache(objectId, objectType, false);
 
         CompletableFuture<VideoProcessResult> future =
                 videoProcessingService.processVideo(file, objectId);
@@ -46,28 +57,108 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         future.thenAccept(result -> {
             log.info("Video processing completed for {}: {}", objectType,  objectId);
             // Save to database or notify via WebSocket
-            saveProcessingResult(result, objectType, objectId, 2, 100);
+            updateProcessingResult(logs, result, ProcessLogsStatus.COMPLETED, 100);
+            updateProcessingCache(objectId, objectType, true);
         }).exceptionally(ex -> {
             log.error("Video processing failed for {}: {}", objectType, objectId, ex);
-            saveProcessingResult(null, objectType, objectId, 3, 0);
+            updateProcessingResult(logs, null, ProcessLogsStatus.FAILED, 0);
+            updateProcessingCache(objectId, objectType, true);
             return null;
         });
 
         return response;
     }
 
-    private void saveProcessingResult(VideoProcessResult result,
-                                      Integer objectType,
-                                      Long objectId,
-                                      Integer status,
-                                      Integer progress) {
+    @Override
+    public StreamInfoResponse getStreamInfo(Long objectId, Integer objectType) {
+        validate(objectId, objectType);
+
+        MovieProcessLogsEntity entity = movieProcessLogRepository.getFirstStreamInfo(objectId, ProcessLogsObjectType.fromId(objectType))
+                .orElseThrow(() -> new ValidationException("Không tìm thấy phim đang xử lý"));
+
+        if (entity.getStatus().equals(ProcessLogsStatus.PROCESSING)) {
+            throw new ValidationException("Phim đang được xử lý");
+        }
+
+        if (entity.getStatus().equals(ProcessLogsStatus.FAILED)) {
+            throw new ValidationException("Có lỗi trong quá trình xử lý");
+        }
+
+        return StreamInfoResponse.buildFromEntity(entity);
+    }
+
+    @Override
+    public ProcessingResponse getProcessingStatus(Long objectId, Integer objectType) {
+        validate(objectId, objectType);
+
+        MovieProcessLogsEntity entity = movieProcessLogRepository.getFirstStreamInfo(objectId, ProcessLogsObjectType.fromId(objectType))
+                .orElseThrow(() -> new ValidationException("Không tìm thấy phim đang xử lý"));
+
+        String key = CacheKey.buildKey(CacheKey.CACHE_VIDEO_PROCESSING_PROGRESS, String.valueOf(objectId));
+        double progress = Optional.ofNullable(redisService.get(key, Double.class)).orElse(0.0);
+
+        if (entity.getStatus().equals(ProcessLogsStatus.COMPLETED)) {
+            progress = 100;
+        }
+
+        return ProcessingResponse.builder()
+                .objectId(objectId)
+                .objectType(objectType)
+                .status(entity.getStatus().name())
+                .progress(progress)
+                .build();
+    }
+
+    /**
+     * Khởi tạo kết quả xử lý video vào DB
+     */
+    private MovieProcessLogsEntity initProcessingResult(Integer objectType,
+                                                        Long objectId) {
         MovieProcessLogsEntity entity = new MovieProcessLogsEntity();
         entity.setObjectId(objectId);
         entity.setObjectType(ProcessLogsObjectType.fromId(objectType));
-        entity.setStatus(ProcessLogsStatus.fromId(status));
-        entity.setConfigs(JsonUtils.parse(JsonUtils.serialize(result)));
+        entity.setStatus(ProcessLogsStatus.fromId(1));
+        entity.setProgress(0);
+        return movieProcessLogRepository.save(entity);
+    }
+
+    /**
+     * Cập nhật kết quả xử lý video vào DB
+     */
+    private void updateProcessingResult(MovieProcessLogsEntity entity,
+                                        VideoProcessResult result,
+                                        ProcessLogsStatus status,
+                                        Integer progress) {
+        entity.setStatus(status);
         entity.setProgress(progress);
+        if (Objects.nonNull(result)) {
+            entity.setConfigs(JsonUtils.parse(result));
+        }
+
         movieProcessLogRepository.save(entity);
+    }
+
+    /**
+     * Cache kiểm tra video có đang được xử lý hay không
+     * Tránh xử lý video trùng lặp
+     */
+    private void checkProcessingCache(Long objectId, Integer objectType) {
+        String key = CacheKey.buildKey(CacheKey.CACHE_PROCESSING_VIDEO, objectType.toString(), objectId.toString());
+        if (redisService.hasKey(key)) {
+            throw new ValidationException("Phim đang được xử lý");
+        }
+    }
+
+    /**
+     * Thêm/xóa cache khi video hoàn thành xử lý
+     */
+    private void updateProcessingCache(Long objectId, Integer objectType, boolean finish) {
+        String key = CacheKey.buildKey(CacheKey.CACHE_PROCESSING_VIDEO, objectType.toString(), objectId.toString());
+        if (finish) {
+            redisService.delete(key);
+        } else {
+            redisService.set(key, true);
+        }
     }
 
     private void validate(MultipartFile file, Long objectId, Integer objectType) {
@@ -87,6 +178,20 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         String contentType = file.getContentType();
         if (contentType == null || !contentType.startsWith("video/")) {
             throw new ValidationException("Invalid file type. Must be video.");
+        }
+
+        if (Objects.isNull(ProcessLogsObjectType.fromId(objectType))) {
+            throw new ValidationException("Chỉ hỗ trợ movie/episode");
+        }
+    }
+
+    private void validate(Long objectId, Integer objectType) {
+        if (Objects.isNull(objectId)) {
+            throw new ValidationException("Cần truyền lên objectId");
+        }
+
+        if (Objects.isNull(objectType)) {
+            throw new ValidationException("Cần truyền lên objectType");
         }
 
         if (Objects.isNull(ProcessLogsObjectType.fromId(objectType))) {

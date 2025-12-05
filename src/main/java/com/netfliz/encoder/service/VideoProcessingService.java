@@ -1,5 +1,6 @@
 package com.netfliz.encoder.service;
 
+import com.netfliz.encoder.constant.CacheKey;
 import com.netfliz.encoder.constant.ProxyCndProperties;
 import com.netfliz.encoder.model.B2FileInfo;
 import com.netfliz.encoder.model.VideoMetadata;
@@ -28,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 public class VideoProcessingService {
     private final B2StorageService b2StorageService;
     private final ProxyCndProperties proxyCndProperties;
+    private final RedisService redisService;
     private final String TEMP_DIR = "/tmp/video-processing";
 
     // Các profile chất lượng video
@@ -94,12 +96,20 @@ public class VideoProcessingService {
                 List<String> processedQualityNames = new ArrayList<>();
 
                 for (VideoQuality quality : targetQualities) {
+                    // update progress to cache
+                    double progressPerQuality = 100.0 / targetQualities.size();
+                    double currentProgress = processedQualityNames.size() * progressPerQuality;
+                    updateProgress(movieId, currentProgress);
+
                     try {
                         String playlistUrl = encodeAndUpload(inputPath, workDir, quality, movieId);
                         if (playlistUrl != null) {
                             playlistUrls.add(playlistUrl);
                             processedQualityNames.add(quality.getName());
                             log.info("✓ Hoàn thành encode: {}", quality.getName());
+
+                            // Cập nhật progress sau khi encode thành công
+                            updateProgress(movieId, (processedQualityNames.size() * progressPerQuality));
                         }
                     } catch (Exception e) {
                         log.error("✗ Lỗi encode {}: {}", quality.getName(), e.getMessage());
@@ -455,8 +465,21 @@ public class VideoProcessingService {
         log.info("✓ Đã upload {}/{} files lên B2", uploaded, files.size());
     }
 
+    /**
+     * Update processing progress to cache
+     */
+    private void updateProgress(Long movieId, double progress) {
+        String key = CacheKey.buildKey(CacheKey.CACHE_VIDEO_PROCESSING_PROGRESS, String.valueOf(movieId));
+        redisService.set(key, progress);
+    }
+
     private int parseBitrate(String bitrate) {
-        return Integer.parseInt(bitrate.replaceAll("[^0-9]", "")) * 1000;
+        // Nếu có 'k' ở cuối, chỉ lấy số và không nhân thêm 1000
+        if (bitrate.toLowerCase().endsWith("k")) {
+            return Integer.parseInt(bitrate.replaceAll("[^0-9]", ""));
+        }
+        // Nếu là số không có đơn vị, mặc định là kbps
+        return Integer.parseInt(bitrate);
     }
 
     private void deleteDirectory(File dir) {
