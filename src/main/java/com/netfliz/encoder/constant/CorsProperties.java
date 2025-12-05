@@ -10,8 +10,7 @@ import java.util.Set;
 @Data
 @EqualsAndHashCode
 @Configuration
-@ConfigurationProperties(prefix = "common")
-public class CommonProperties {
-    private String localTempDir = "/tmp/netfliz-encoder";
-    private String tomcatTempDir = "/tmp/video-processing";
+@ConfigurationProperties(prefix = "spring.cors")
+public class CorsProperties {
+    private Set<String> allowedOriginPatterns = Set.of("http://localhost:*,https://*.swpts.site,https://*.up.railway.app");
 }
