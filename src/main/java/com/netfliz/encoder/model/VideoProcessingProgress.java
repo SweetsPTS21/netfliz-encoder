@@ -44,8 +44,6 @@ public class VideoProcessingProgress {
         private int width;
         private int height;
         private String resolution; // e.g., "1920x1080"
-        private double duration; // in seconds
-        private String durationFormatted; // e.g., "01:23:45"
         private int bitRate; // in kbps
         private String videoCodec;
         private String audioCodec;

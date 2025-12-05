@@ -59,16 +59,8 @@ public class VideoProcessingService {
 
                 // Get file info
                 long fileSize = file.getSize();
-                
-                // Initialize progress with file info
-                VideoProcessingProgress.VideoAnalysis analysis = VideoProcessingProgress.VideoAnalysis.builder()
-                        .fileName(originalFilename)
-                        .fileSize(fileSize)
-                        .fileSizeFormatted(formatFileSize(fileSize))
-                        .build();
-                        
-                progressService.initializeProgress(movieId, jobId, analysis);
-                
+
+                // ProgressService: receiving file
                 progressService.updateStage(movieId,
                         VideoProcessingProgress.ProcessingStatus.QUEUED,
                         "Starting", "Preparing to process video: " + originalFilename, 0);
@@ -89,8 +81,6 @@ public class VideoProcessingService {
                         VideoProcessingProgress.ProcessingStatus.QUEUED,
                         "Uploading", "Receiving file...", 2);
 
-                file.transferTo(inputPath.toFile());
-
                 log.info("=== Bắt đầu xử lý video: {} ===", movieId);
 
                 // Bước 0: Kiểm tra và xóa dữ liệu cũ trên B2
@@ -105,6 +95,21 @@ public class VideoProcessingService {
                 VideoMetadata metadata = analyzeVideo(inputPath);
                 log.info("Video gốc - Độ phân giải: {}x{}, Bitrate: {} kbps, Codec: {}",
                         metadata.getWidth(), metadata.getHeight(), metadata.getBitrate() / 1000, metadata.getVideoCodec());
+                
+                // Cập nhật thông tin phân tích vào progress
+                VideoProcessingProgress.VideoAnalysis analysis = VideoProcessingProgress.VideoAnalysis.builder()
+                        .fileName(originalFilename)
+                        .fileSize(fileSize)
+                        .fileSizeFormatted(formatFileSize(fileSize))
+                        .width(metadata.getWidth())
+                        .height(metadata.getHeight())
+                        .resolution(metadata.getWidth() + "x" + metadata.getHeight())
+                        .bitRate(metadata.getBitrate())
+                        .videoCodec(metadata.getVideoCodec())
+                        .frameRate(metadata.getFps())
+                        .build();
+
+                progressService.initializeProgress(movieId, jobId, analysis);
 
                 // Bước 2: Xác định các chất lượng cần encode
                 List<VideoQuality> targetQualities = determineTargetQualities(metadata);
@@ -158,15 +163,17 @@ public class VideoProcessingService {
                 // Bước 3: Encode các chất lượng
                 List<String> playlistUrls = new ArrayList<>();
                 List<String> processedQualityNames = new ArrayList<>();
+                double progressPerQuality = 100.0 / targetQualities.size();
+                int progressTotalPerQuality = 50 / targetQualities.size();
+                int progressTotal = 35;
 
                 for (VideoQuality quality : targetQualities) {
                     // update progress to cache
-                    double progressPerQuality = 100.0 / targetQualities.size();
                     double currentProgress = processedQualityNames.size() * progressPerQuality;
                     updateProgress(movieId, currentProgress);
 
                     try {
-                        // ProgressService: start encoding
+                        // ProgressService: start encoding each quality
                         progressService.updateQualityProgress(movieId, quality.getName(),
                                 VideoProcessingProgress.QualityStatus.ENCODING,
                                 0, "Starting encode");
@@ -176,13 +183,19 @@ public class VideoProcessingService {
                             playlistUrls.add(playlistUrl);
                             processedQualityNames.add(quality.getName());
 
-                            // ProgressService: completed
+                            // ProgressService: completed uploading each quality
                             progressService.updateQualityProgress(movieId, quality.getName(),
                                     VideoProcessingProgress.QualityStatus.COMPLETED,
                                     100, "Completed");
 
+                            // ProgressService: update master stage
+                            progressService.updateStage(movieId,
+                                    VideoProcessingProgress.ProcessingStatus.UPLOADING,
+                                    "Uploading", "Uploading to B2", progressTotal);
+
                             // Cập nhật progress sau khi encode thành công
                             updateProgress(movieId, (processedQualityNames.size() * progressPerQuality));
+                            progressTotal += progressTotalPerQuality;
 
                             log.info("✓ Hoàn thành encode: {}", quality.getName());
                         }
@@ -366,6 +379,11 @@ public class VideoProcessingService {
             }
 
             log.info("✓ Encode thành công: {}", quality.getName());
+
+            // ProgressService: finish encoding
+            progressService.updateQualityProgress(movieId, quality.getName(),
+                    VideoProcessingProgress.QualityStatus.ENCODING,
+                    100, "Encode completed");
 
             // Đếm số segments
             long segmentCount = Files.list(Paths.get(outputDir))
@@ -552,6 +570,11 @@ public class VideoProcessingService {
      */
     private void uploadDirectoryToB2(Path dir, String b2Prefix, Long movieId, String quality) throws IOException {
         log.info("Đang upload lên B2: {}", b2Prefix);
+
+        // ProgressService: start uploading
+        progressService.updateQualityProgress(movieId, quality,
+                VideoProcessingProgress.QualityStatus.UPLOADING,
+                0, "Start uploading");
 
         List<Path> files = Files.walk(dir)
                 .filter(Files::isRegularFile)
