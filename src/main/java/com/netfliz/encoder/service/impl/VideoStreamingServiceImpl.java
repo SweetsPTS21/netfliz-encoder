@@ -55,12 +55,12 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
 
         // Handle completion asynchronously
         future.thenAccept(result -> {
-            log.info("Video processing completed for {}: {}", objectType,  objectId);
+            log.info("Video processing completed for {}: {}", ProcessLogsObjectType.fromId(objectType),  objectId);
             // Save to database or notify via WebSocket
             updateProcessingResult(logs, result, ProcessLogsStatus.COMPLETED, 100);
             updateProcessingCache(objectId, objectType, true);
         }).exceptionally(ex -> {
-            log.error("Video processing failed for {}: {}", objectType, objectId, ex);
+            log.error("Video processing failed for {}: {}", ProcessLogsObjectType.fromId(objectType), objectId, ex);
             updateProcessingResult(logs, null, ProcessLogsStatus.FAILED, 0);
             updateProcessingCache(objectId, objectType, true);
             return null;

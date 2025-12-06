@@ -1,5 +1,6 @@
 package com.netfliz.encoder.config;
 
+import com.netfliz.encoder.constant.CommonConfig;
 import com.netfliz.encoder.entity.enums.Role;
 import com.netfliz.encoder.repository.TokenRepository;
 import com.netfliz.encoder.service.JwtService;
@@ -18,11 +19,12 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.List;
+import java.util.Arrays;
 import java.util.Set;
 
 @Component
@@ -32,12 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
     private final TokenRepository tokenRepository;
-    private static final List<String> WHITE_LIST_URL = List.of(
-            "/api/v1/auth/register",
-            "/api/v1/auth/authenticate",
-            "/api/v1/auth/refresh-token",
-            "/api/v1/file/presign-url"
-    );
+    private static final AntPathMatcher pathMatcher = new AntPathMatcher();
 
     @Override
     protected void doFilterInternal(
@@ -45,7 +42,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        if (WHITE_LIST_URL.stream().anyMatch(url -> request.getServletPath().contains(url))) {
+        if (Arrays.stream(CommonConfig.WHITE_LIST_URL)
+                .anyMatch(pattern -> pathMatcher.match(pattern, request.getServletPath()))) {
             filterChain.doFilter(request, response);
             return;
         }
