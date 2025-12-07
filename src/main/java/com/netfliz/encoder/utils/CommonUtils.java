@@ -8,6 +8,6 @@ public class CommonUtils {
             return "";
         }
 
-        return fileName.substring(fileName.lastIndexOf("."));
+        return fileName.substring(fileName.lastIndexOf(".")).replace(".", "");
     }
 }

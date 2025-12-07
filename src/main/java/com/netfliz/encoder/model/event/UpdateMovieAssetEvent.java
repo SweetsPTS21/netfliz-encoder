@@ -21,6 +21,7 @@ public class UpdateMovieAssetEvent extends BaseEvent<UpdateMovieAssetEvent.Movie
         private Long objectId;
         private Integer objectType;
         private Integer assetType; // e.g., "TRAILER", "MOVIE", "TEASER"
+        private String name;
         private String format;
         private String url;
         private String drm;

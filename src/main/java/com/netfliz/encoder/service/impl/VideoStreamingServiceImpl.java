@@ -167,11 +167,13 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
                 .objectId(objectId)
                 .objectType(objectType)
                 .assetType(MovieAssetType.VIDEO.getId())
-                .format("mp4")
+                .name(file.getOriginalFilename())
+                .format(CommonUtils.getFileExtension(file.getOriginalFilename()))
                 .url(result.getMasterPlaylistUrl())
                 .drm(drm)
                 .rendition(rendition)
-                .file(filePayload).build();
+                .file(filePayload)
+                .build();
 
         kafkaProducerService.sendUpdateMovieAssetEvent(UpdateMovieAssetEvent.create(payload));
     }
