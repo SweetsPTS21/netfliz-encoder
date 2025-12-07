@@ -1,6 +1,8 @@
 package com.netfliz.encoder.service;
 
-import com.netfliz.encoder.model.event.*;
+import com.netfliz.encoder.constant.KafkaEventType;
+import com.netfliz.encoder.model.event.UpdateMovieAssetEvent;
+import com.netfliz.encoder.model.event.VideoViewEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,11 +12,15 @@ import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
 public class KafkaProducerService {
     private final KafkaTemplate<String, Object> standardTemplate;
+
+    @Value("${kafka.topics.update-movie-asset}")
+    private String updateMovieAssetTopic;
 
     @Value("${kafka.topics.video-view}")
     private String videoViewTopic;
@@ -22,6 +28,21 @@ public class KafkaProducerService {
     public KafkaProducerService(
             @Qualifier("kafkaTemplate") KafkaTemplate<String, Object> standardTemplate) {
         this.standardTemplate = standardTemplate;
+    }
+
+    public void sendUpdateMovieAssetEvent(UpdateMovieAssetEvent event) {
+        event.setEventId(UUID.randomUUID().toString());
+        var payload = event.getPayload();
+
+        log.info("Sending update movie asset event - movieId: {}", payload.getObjectId());
+
+        sendMessage(
+                standardTemplate,
+                updateMovieAssetTopic,
+                payload.getObjectId().toString(),
+                event,
+                KafkaEventType.UPDATE_MOVIE_ASSET
+        );
     }
 
     /**
@@ -39,9 +60,10 @@ public class KafkaProducerService {
                 videoViewTopic,
                 event.getUserId().toString(),
                 event,
-                "VideoView"
+                KafkaEventType.VIDEO_VIEW
         );
     }
+
     /**
      * Gửi multiple events cùng lúc (batch)
      * Hữu ích khi cần gửi nhiều events liên quan
@@ -95,7 +117,7 @@ public class KafkaProducerService {
         try {
             // Send một test message
             standardTemplate.send(videoViewTopic, "health-check", "ping")
-                    .get(5, java.util.concurrent.TimeUnit.SECONDS);
+                    .get(5, TimeUnit.SECONDS);
             return true;
         } catch (Exception e) {
             log.error("Kafka health check failed", e);

@@ -1,6 +1,6 @@
 package com.netfliz.encoder.service;
 
-import com.netfliz.encoder.model.event.*;
+import com.netfliz.encoder.model.event.VideoViewEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -10,13 +10,10 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class KafkaConsumerService {
-
     /**
      * Consumer cho VIDEO VIEW events
      * - Cập nhật view count
