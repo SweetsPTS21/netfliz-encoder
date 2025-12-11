@@ -11,9 +11,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.HashMap;
-import java.util.Map;
-
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/videos")
@@ -28,9 +25,11 @@ public class VideoStreamingController {
     public ResponseEntity<UploadVideoResponse> uploadVideo(
             @RequestParam("file") MultipartFile file,
             @RequestParam("objectId") Long objectId,
-            @RequestParam("objectType") Integer objectType) {
+            @RequestParam("objectType") Integer objectType,
+            @RequestParam(name = "drm", required = false) String drm,
+            @RequestParam(name = "rendition", required = false) String rendition) {
 
-        return ResponseEntity.ok(videoStreamingService.uploadVideo(file, objectId, objectType));
+        return ResponseEntity.ok(videoStreamingService.uploadVideo(file, objectId, objectType, drm, rendition));
     }
 
     /**

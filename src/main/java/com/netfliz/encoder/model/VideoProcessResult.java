@@ -18,4 +18,5 @@ public class VideoProcessResult {
     String sourceResolution;
     List<String> processedQualities;
     List<String> skippedQualities;
+    String analysis;
 }

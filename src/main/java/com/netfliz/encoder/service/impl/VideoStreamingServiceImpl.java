@@ -2,16 +2,20 @@ package com.netfliz.encoder.service.impl;
 
 import com.netfliz.encoder.constant.CacheKey;
 import com.netfliz.encoder.entity.MovieProcessLogsEntity;
+import com.netfliz.encoder.entity.enums.MovieAssetType;
 import com.netfliz.encoder.entity.enums.ProcessLogsObjectType;
 import com.netfliz.encoder.entity.enums.ProcessLogsStatus;
 import com.netfliz.encoder.model.ProcessingResponse;
 import com.netfliz.encoder.model.StreamInfoResponse;
 import com.netfliz.encoder.model.UploadVideoResponse;
 import com.netfliz.encoder.model.VideoProcessResult;
+import com.netfliz.encoder.model.event.UpdateMovieAssetEvent;
 import com.netfliz.encoder.repository.MovieProcessLogRepository;
+import com.netfliz.encoder.service.KafkaProducerService;
 import com.netfliz.encoder.service.RedisService;
 import com.netfliz.encoder.service.VideoProcessingService;
 import com.netfliz.encoder.service.VideoStreamingService;
+import com.netfliz.encoder.utils.CommonUtils;
 import com.netfliz.encoder.utils.JsonUtils;
 import jakarta.validation.ValidationException;
 import lombok.AllArgsConstructor;
@@ -19,7 +23,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -31,15 +34,20 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
     private final VideoProcessingService videoProcessingService;
     private final MovieProcessLogRepository movieProcessLogRepository;
     private final RedisService redisService;
+    private final KafkaProducerService kafkaProducerService;
 
     @Override
-    public UploadVideoResponse uploadVideo(MultipartFile file, Long objectId, Integer objectType) {
+    public UploadVideoResponse uploadVideo(MultipartFile file,
+                                           Long objectId,
+                                           Integer objectType,
+                                           String drm,
+                                           String rendition) {
         validate(file, objectId, objectType);
         checkProcessingCache(objectId, objectType);
 
         log.info("Receiving video upload for movie: {}", objectId);
 
-        // save processing
+        // save processing logs
         var logs = initProcessingResult(objectType, objectId);
         updateProcessingCache(objectId, objectType, false);
 
@@ -55,10 +63,11 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
 
         // Handle completion asynchronously
         future.thenAccept(result -> {
-            log.info("Video processing completed for {}: {}", ProcessLogsObjectType.fromId(objectType),  objectId);
+            log.info("Video processing completed for {}: {}", ProcessLogsObjectType.fromId(objectType), objectId);
             // Save to database or notify via WebSocket
             updateProcessingResult(logs, result, ProcessLogsStatus.COMPLETED, 100);
             updateProcessingCache(objectId, objectType, true);
+            createMovieAsset(objectId, objectType, drm, rendition, file, result);
         }).exceptionally(ex -> {
             log.error("Video processing failed for {}: {}", ProcessLogsObjectType.fromId(objectType), objectId, ex);
             updateProcessingResult(logs, null, ProcessLogsStatus.FAILED, 0);
@@ -136,6 +145,37 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         }
 
         movieProcessLogRepository.save(entity);
+    }
+
+    private void createMovieAsset(Long objectId,
+                                  Integer objectType,
+                                  String drm,
+                                  String rendition,
+                                  MultipartFile file,
+                                  VideoProcessResult result) {
+        var filePayload = UpdateMovieAssetEvent.FilePayload.builder()
+                .fileCategory("video")
+                .fileExtension(CommonUtils.getFileExtension(file.getOriginalFilename()))
+                .fileName(file.getOriginalFilename())
+                .fileOwner("admin")
+                .fileSize(file.getSize())
+                .fileType(file.getContentType())
+                .fileUploader("admin")
+                .build();
+
+        var payload = UpdateMovieAssetEvent.MovieAssetPayload.builder()
+                .objectId(objectId)
+                .objectType(objectType)
+                .assetType(MovieAssetType.VIDEO.getId())
+                .name(file.getOriginalFilename())
+                .format(CommonUtils.getFileExtension(file.getOriginalFilename()))
+                .url(result.getMasterPlaylistUrl())
+                .drm(drm)
+                .rendition(rendition)
+                .file(filePayload)
+                .build();
+
+        kafkaProducerService.sendUpdateMovieAssetEvent(UpdateMovieAssetEvent.create(payload));
     }
 
     /**
