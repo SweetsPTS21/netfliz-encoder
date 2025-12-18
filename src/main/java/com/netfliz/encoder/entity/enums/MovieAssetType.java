@@ -8,7 +8,8 @@ import lombok.Getter;
 public enum MovieAssetType {
     VIDEO(1, "Video"),
     TRAILER(2, "Trailer"),
-    SUBTITLE(3, "Subtitle");
+    SUBTITLE(3, "Subtitle"),
+    VIDEO_ENCODE(4, "Video Encode");
 
     private final Integer id;
     private final String description;
