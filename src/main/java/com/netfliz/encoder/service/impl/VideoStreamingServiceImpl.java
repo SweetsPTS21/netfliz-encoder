@@ -154,7 +154,7 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
                                   MultipartFile file,
                                   VideoProcessResult result) {
         var filePayload = UpdateMovieAssetEvent.FilePayload.builder()
-                .fileCategory("video")
+                .fileCategory("video encode")
                 .fileExtension(CommonUtils.getFileExtension(file.getOriginalFilename()))
                 .fileName(file.getOriginalFilename())
                 .fileOwner("admin")
@@ -166,7 +166,7 @@ public class VideoStreamingServiceImpl implements VideoStreamingService {
         var payload = UpdateMovieAssetEvent.MovieAssetPayload.builder()
                 .objectId(objectId)
                 .objectType(objectType)
-                .assetType(MovieAssetType.VIDEO.getId())
+                .assetType(MovieAssetType.VIDEO_ENCODE.getId())
                 .name(file.getOriginalFilename())
                 .format(CommonUtils.getFileExtension(file.getOriginalFilename()))
                 .url(result.getMasterPlaylistUrl())
