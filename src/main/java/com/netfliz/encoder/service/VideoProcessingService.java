@@ -3,6 +3,7 @@ package com.netfliz.encoder.service;
 import com.netfliz.encoder.constant.CacheKey;
 import com.netfliz.encoder.constant.CommonProperties;
 import com.netfliz.encoder.constant.ProxyCndProperties;
+import com.netfliz.encoder.constant.VideoProperties;
 import com.netfliz.encoder.model.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class VideoProcessingService {
     private final RedisService redisService;
     private final VideoProgressService progressService;
     private final CommonProperties commonProperties;
+    private final VideoProperties videoProperties;
 
     // Các profile chất lượng video
     private static final VideoQuality[] QUALITIES = {
@@ -95,7 +97,7 @@ public class VideoProcessingService {
                 VideoMetadata metadata = analyzeVideo(inputPath);
                 log.info("Video gốc - Độ phân giải: {}x{}, Bitrate: {} kbps, Codec: {}",
                         metadata.getWidth(), metadata.getHeight(), metadata.getBitrate() / 1000, metadata.getVideoCodec());
-                
+
                 // Cập nhật thông tin phân tích vào progress
                 VideoProcessingProgress.VideoAnalysis analysis = VideoProcessingProgress.VideoAnalysis.builder()
                         .fileName(originalFilename)
@@ -331,7 +333,7 @@ public class VideoProcessingService {
 
             // FFmpeg command for HLS encoding
             List<String> command = new ArrayList<>(List.of(
-                    "ffmpeg",
+                    videoProperties.getProcessing().getFfmpegPath(),
                     "-i", input.toString(),
                     "-vf", String.format("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2",
                             quality.getWidth(), quality.getHeight(), quality.getWidth(), quality.getHeight()),
@@ -409,7 +411,7 @@ public class VideoProcessingService {
         log.info("Đang phân tích video...");
 
         ProcessBuilder pb = new ProcessBuilder(
-                "ffprobe",
+                videoProperties.getProcessing().getFfprobePath(),
                 "-v", "error",
                 "-select_streams", "v:0",
                 "-show_entries", "stream=width,height,codec_name,bit_rate,r_frame_rate",
@@ -647,17 +649,17 @@ public class VideoProcessingService {
         // Nếu là số không có đơn vị, mặc định là kbps
         return Integer.parseInt(bitrate);
     }
-    
+
     /**
      * Format file size from bytes to human readable format
      */
     private String formatFileSize(long bytes) {
         if (bytes < 1024) return bytes + " B";
         int exp = (int) (Math.log(bytes) / Math.log(1024));
-        char pre = "KMGTPE".charAt(exp-1);
+        char pre = "KMGTPE".charAt(exp - 1);
         return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
-    
+
     /**
      * Format duration in seconds to HH:MM:SS format
      */
