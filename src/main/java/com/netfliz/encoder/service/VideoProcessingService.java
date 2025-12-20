@@ -18,10 +18,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Service
@@ -117,37 +117,7 @@ public class VideoProcessingService {
                 List<VideoQuality> targetQualities = determineTargetQualities(metadata);
 
                 if (targetQualities.isEmpty()) {
-                    log.warn("Video có độ phân giải quá thấp ({}x{}), chỉ dùng video gốc",
-                            metadata.getWidth(), metadata.getHeight());
-
-                    // ProgressService: processing quality
-                    progressService.updateStage(movieId,
-                            VideoProcessingProgress.ProcessingStatus.ENCODING,
-                            "Processing original", "Processing original quality only...", 30);
-
-                    // Upload video gốc như HLS
-                    String originalUrl = encodeAndUpload(inputPath, workDir,
-                            new VideoQuality("original", metadata.getWidth(), metadata.getHeight(),
-                                    metadata.getBitrate() + "k", "128k"), movieId);
-
-                    // ProgressService: creating playlist
-                    progressService.updateStage(movieId,
-                            VideoProcessingProgress.ProcessingStatus.CREATING_PLAYLIST,
-                            "Finalizing", "Creating master playlist...", 90);
-
-                    String masterPlaylistUrl = createMasterPlaylist(
-                            List.of(originalUrl), List.of(metadata.getHeight() + "p"), movieId);
-
-                    // ProgressService: completed
-                    progressService.markCompleted(movieId, "Processing completed successfully!");
-
-                    return VideoProcessResult.builder()
-                            .movieId(movieId)
-                            .masterPlaylistUrl(masterPlaylistUrl)
-                            .sourceResolution(metadata.getWidth() + "x" + metadata.getHeight())
-                            .processedQualities(List.of(metadata.getHeight() + "p"))
-                            .skippedQualities(List.of())
-                            .build();
+                    return processOriginalVideo(movieId, metadata, inputPath, workDir);
                 }
 
                 log.info("Sẽ encode {} chất lượng: {}", targetQualities.size(),
@@ -162,72 +132,100 @@ public class VideoProcessingService {
                         VideoProcessingProgress.ProcessingStatus.ENCODING,
                         "Encoding", "Encoding multiple qualities...", 15);
 
-                // Bước 3: Encode các chất lượng
+                // Bước 3: Encode các chất lượng song song
+                int concurrentJobs = videoProperties.getProcessing().getConcurrentJobs();
+                if (concurrentJobs <= 0) {
+                    concurrentJobs = 1; // Đảm bảo ít nhất 1 job
+                }
+                log.info("Sử dụng {} luồng để xử lý video", concurrentJobs);
+
+                // Tạo thread pool với số luồng được cấu hình
+                ExecutorService executor = Executors.newFixedThreadPool(concurrentJobs);
+
+                // Tạo danh sách các tác vụ xử lý
+                Path finalWorkDir = workDir;
+                var encodingFutures = targetQualities.stream()
+                        .map(quality -> CompletableFuture.supplyAsync(() -> {
+                            try {
+                                // ProgressService: start encoding each quality
+                                progressService.updateQualityProgress(movieId, quality.getName(),
+                                        VideoProcessingProgress.QualityStatus.ENCODING,
+                                        0, "Starting encode");
+
+                                String playlistUrl = encodeAndUpload(inputPath, finalWorkDir, quality, movieId);
+
+                                // ProgressService: completed uploading each quality
+                                if (playlistUrl != null) {
+                                    progressService.updateQualityProgress(movieId, quality.getName(),
+                                            VideoProcessingProgress.QualityStatus.COMPLETED,
+                                            100, "Completed");
+                                    return new AbstractMap.SimpleEntry<>(quality.getName(), playlistUrl);
+                                }
+
+                                log.info("✓ Hoàn thành encode: {}", quality.getName());
+
+                                return null;
+                            } catch (Exception e) {
+                                log.error("Lỗi khi xử lý chất lượng " + quality.getName(), e);
+
+                                // update error
+                                progressService.updateQualityProgress(movieId, quality.getName(),
+                                        VideoProcessingProgress.QualityStatus.FAILED,
+                                        0, "Error: " + e.getMessage());
+                                return null;
+                            }
+                        }, executor))
+                        .toList();
+
+                // Chờ tất cả các tác vụ hoàn thành
                 List<String> playlistUrls = new ArrayList<>();
                 List<String> processedQualityNames = new ArrayList<>();
-                double progressPerQuality = 100.0 / targetQualities.size();
-                int progressTotalPerQuality = 50 / targetQualities.size();
-                int progressTotal = 35;
 
-                for (VideoQuality quality : targetQualities) {
-                    // update progress to cache
-                    double currentProgress = processedQualityNames.size() * progressPerQuality;
-                    updateProgress(movieId, currentProgress);
-
+                for (CompletableFuture<AbstractMap.SimpleEntry<String, String>> future : encodingFutures) {
                     try {
-                        // ProgressService: start encoding each quality
-                        progressService.updateQualityProgress(movieId, quality.getName(),
-                                VideoProcessingProgress.QualityStatus.ENCODING,
-                                0, "Starting encode");
+                        Map.Entry<String, String> result = future.get();
+                        if (result != null) {
+                            processedQualityNames.add(result.getKey());
+                            playlistUrls.add(result.getValue());
 
-                        String playlistUrl = encodeAndUpload(inputPath, workDir, quality, movieId);
-                        if (playlistUrl != null) {
-                            playlistUrls.add(playlistUrl);
-                            processedQualityNames.add(quality.getName());
-
-                            // ProgressService: completed uploading each quality
-                            progressService.updateQualityProgress(movieId, quality.getName(),
-                                    VideoProcessingProgress.QualityStatus.COMPLETED,
-                                    100, "Completed");
+                            // Cập nhật tiến trình tổng thể
+                            double progress = (processedQualityNames.size() * 100.0) / targetQualities.size();
+                            updateProgress(movieId, progress);
 
                             // ProgressService: update master stage
                             progressService.updateStage(movieId,
                                     VideoProcessingProgress.ProcessingStatus.UPLOADING,
-                                    "Uploading", "Uploading to B2", progressTotal);
-
-                            // Cập nhật progress sau khi encode thành công
-                            updateProgress(movieId, (processedQualityNames.size() * progressPerQuality));
-                            progressTotal += progressTotalPerQuality;
-
-                            log.info("✓ Hoàn thành encode: {}", quality.getName());
+                                    "Uploading", "Uploading to B2", 35 + (int) (progress * 0.5));
                         }
                     } catch (Exception e) {
-                        // ProgressService: failed
-                        progressService.updateQualityProgress(movieId, quality.getName(),
-                                VideoProcessingProgress.QualityStatus.FAILED,
-                                0, "Failed: " + e.getMessage());
-
-                        log.error("✗ Lỗi encode {}: {}", quality.getName(), e.getMessage());
+                        log.error("Lỗi khi chờ tác vụ xử lý video hoàn thành", e);
                     }
                 }
 
-                if (playlistUrls.isEmpty()) {
-                    throw new RuntimeException("Không encode được chất lượng nào");
+                // Sắp xếp lại thứ tự các chất lượng theo thứ tự giảm dần
+                List<String> sortedQualities = Arrays.stream(QUALITIES)
+                        .map(VideoQuality::getName)
+                        .filter(processedQualityNames::contains)
+                        .toList();
+
+                List<String> sortedPlaylistUrls = new ArrayList<>();
+                for (String quality : sortedQualities) {
+                    int index = processedQualityNames.indexOf(quality);
+                    if (index >= 0) {
+                        sortedPlaylistUrls.add(playlistUrls.get(index));
+                    }
                 }
 
                 // ProgressService: creating playlist
                 progressService.updateStage(movieId,
                         VideoProcessingProgress.ProcessingStatus.CREATING_PLAYLIST,
-                        "Finalizing", "Creating master playlist...", 85);
+                        "Finalizing", "Creating master playlist...", 90);
 
-                String masterPlaylistUrl = createMasterPlaylist(playlistUrls,
-                        processedQualityNames, movieId);
+                String masterPlaylistUrl = createMasterPlaylist(
+                        sortedPlaylistUrls, processedQualityNames, movieId);
 
                 // ProgressService: completed
-                progressService.markCompleted(movieId,
-                        String.format("Successfully processed %d qualities", playlistUrls.size()));
-
-                log.info("=== Hoàn thành xử lý video: {} ===", movieId);
+                progressService.markCompleted(movieId, "Processing completed successfully!");
 
                 return VideoProcessResult.builder()
                         .movieId(movieId)
@@ -236,6 +234,7 @@ public class VideoProcessingService {
                         .processedQualities(processedQualityNames)
                         .skippedQualities(getSkippedQualities(metadata, targetQualities))
                         .build();
+
             } catch (Exception e) {
                 log.error("Lỗi xử lý video", e);
 
@@ -256,6 +255,46 @@ public class VideoProcessingService {
                 }
             }
         });
+    }
+
+    /**
+     * Chỉ xử lý video gốc do độ phân giải thấp
+     */
+    private VideoProcessResult processOriginalVideo(Long movieId,
+                                                    VideoMetadata metadata,
+                                                    Path inputPath,
+                                                    Path workDir) {
+        log.warn("Video có độ phân giải quá thấp ({}x{}), chỉ dùng video gốc",
+                metadata.getWidth(), metadata.getHeight());
+
+        // ProgressService: processing quality
+        progressService.updateStage(movieId,
+                VideoProcessingProgress.ProcessingStatus.ENCODING,
+                "Processing original", "Processing original quality only...", 30);
+
+        // Upload video gốc như HLS
+        String originalUrl = encodeAndUpload(inputPath, workDir,
+                new VideoQuality("original", metadata.getWidth(), metadata.getHeight(),
+                        metadata.getBitrate() + "k", "128k"), movieId);
+
+        // ProgressService: creating playlist
+        progressService.updateStage(movieId,
+                VideoProcessingProgress.ProcessingStatus.CREATING_PLAYLIST,
+                "Finalizing", "Creating master playlist...", 90);
+
+        String masterPlaylistUrl = createMasterPlaylist(
+                List.of(originalUrl), List.of(metadata.getHeight() + "p"), movieId);
+
+        // ProgressService: completed
+        progressService.markCompleted(movieId, "Processing completed successfully!");
+
+        return VideoProcessResult.builder()
+                .movieId(movieId)
+                .masterPlaylistUrl(masterPlaylistUrl)
+                .sourceResolution(metadata.getWidth() + "x" + metadata.getHeight())
+                .processedQualities(List.of(metadata.getHeight() + "p"))
+                .skippedQualities(List.of())
+                .build();
     }
 
     /**

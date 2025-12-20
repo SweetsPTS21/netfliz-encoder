@@ -18,10 +18,10 @@ public class VideoProperties {
 
     @Data
     public static class Processing {
-        private String tempDir = "/tmp/video-processing";
-        private String ffmpegPath = "/usr/bin/ffmpeg";
-        private String ffprobePath = "/usr/bin/ffprobe";
-        private int concurrentJobs;
+        private String tempDir;
+        private String ffmpegPath;
+        private String ffprobePath;
+        private int concurrentJobs = 1;
     }
 
     @Data
