@@ -1,0 +1,50 @@
+# ============================================
+# Netfliz API - Docker Compose Configuration
+# ============================================
+# Quick Start:
+#   1. Copy .env.example to .env and configure
+#   2. Run: docker-compose up -d
+# ============================================
+
+services:
+  # ----------------------------------------
+  # Main Application
+  # ----------------------------------------
+  netfliz-encoder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: netfliz-encoder:latest
+    container_name: netfliz-encoder
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8081}:8081"
+    env_file:
+      - .env
+    networks:
+      - netfliz-network
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: encoder-tunnel
+    command: tunnel run encoder-tunnel
+    depends_on:
+      - netfliz-encoder
+    volumes:
+      - ~/.cloudflared:/etc/cloudflared
+    restart: unless-stopped
+    networks:
+      - netfliz-network
+
+# ----------------------------------------
+# Networks
+# ----------------------------------------
+networks:
+  netfliz-network:
+    driver: bridge
