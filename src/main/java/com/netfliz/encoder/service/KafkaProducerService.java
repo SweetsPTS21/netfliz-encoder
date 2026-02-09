@@ -1,5 +1,7 @@
 package com.netfliz.encoder.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.netfliz.encoder.constant.KafkaEventType;
 import com.netfliz.encoder.model.event.UpdateMovieAssetEvent;
 import com.netfliz.encoder.model.event.VideoViewEvent;
@@ -17,7 +19,8 @@ import java.util.concurrent.TimeUnit;
 @Service
 @Slf4j
 public class KafkaProducerService {
-    private final KafkaTemplate<String, Object> standardTemplate;
+    private final KafkaTemplate<String, String> standardTemplate;
+    private final ObjectMapper objectMapper;
 
     @Value("${kafka.topics.update-movie-asset}")
     private String updateMovieAssetTopic;
@@ -26,8 +29,10 @@ public class KafkaProducerService {
     private String videoViewTopic;
 
     public KafkaProducerService(
-            @Qualifier("kafkaTemplate") KafkaTemplate<String, Object> standardTemplate) {
+            @Qualifier("kafkaTemplate") KafkaTemplate<String, String> standardTemplate,
+            ObjectMapper objectMapper) {
         this.standardTemplate = standardTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public void sendUpdateMovieAssetEvent(UpdateMovieAssetEvent event) {
@@ -41,15 +46,14 @@ public class KafkaProducerService {
                 updateMovieAssetTopic,
                 payload.getObjectId().toString(),
                 event,
-                KafkaEventType.UPDATE_MOVIE_ASSET
-        );
+                KafkaEventType.UPDATE_MOVIE_ASSET);
     }
 
     /**
      * Gửi event xem video
      * Sử dụng userId làm key để đảm bảo messages từ cùng user vào cùng partition
      */
-    public CompletableFuture<SendResult<String, Object>> sendVideoViewEvent(VideoViewEvent event) {
+    public CompletableFuture<SendResult<String, String>> sendVideoViewEvent(VideoViewEvent event) {
         event.setEventId(UUID.randomUUID().toString());
 
         log.info("Sending video view event - userId: {}, videoId: {}",
@@ -60,8 +64,7 @@ public class KafkaProducerService {
                 videoViewTopic,
                 event.getUserId().toString(),
                 event,
-                KafkaEventType.VIDEO_VIEW
-        );
+                KafkaEventType.VIDEO_VIEW);
     }
 
     /**
@@ -72,27 +75,34 @@ public class KafkaProducerService {
         log.info("Sending batch events for userId: {}", viewEvent.getUserId());
 
         CompletableFuture.allOf(
-                sendVideoViewEvent(viewEvent)
-        ).whenComplete((result, ex) -> {
-            if (ex == null) {
-                log.info("✓ All batch events sent successfully");
-            } else {
-                log.error("✗ Some batch events failed", ex);
-            }
-        });
+                sendVideoViewEvent(viewEvent)).whenComplete((result, ex) -> {
+                    if (ex == null) {
+                        log.info("✓ All batch events sent successfully");
+                    } else {
+                        log.error("✗ Some batch events failed", ex);
+                    }
+                });
     }
 
     /**
      * Method chung để gửi message với callback
      */
-    private CompletableFuture<SendResult<String, Object>> sendMessage(
-            KafkaTemplate<String, Object> template,
+    private CompletableFuture<SendResult<String, String>> sendMessage(
+            KafkaTemplate<String, String> template,
             String topic,
             String key,
             Object event,
             String eventType) {
 
-        CompletableFuture<SendResult<String, Object>> future = template.send(topic, key, event);
+        String jsonValue;
+        try {
+            jsonValue = objectMapper.writeValueAsString(event);
+        } catch (JsonProcessingException e) {
+            log.error("✗ Failed to serialize {} event to JSON", eventType, e);
+            return CompletableFuture.failedFuture(e);
+        }
+
+        CompletableFuture<SendResult<String, String>> future = template.send(topic, key, jsonValue);
 
         future.whenComplete((result, ex) -> {
             if (ex == null) {
