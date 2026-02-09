@@ -8,7 +8,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
-import org.springframework.kafka.support.serializer.JsonSerializer;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -42,13 +41,13 @@ public class KafkaProducerConfig {
      * Cấu hình chung cho tất cả producers
      */
     @Bean
-    public ProducerFactory<String, Object> producerFactory() {
+    public ProducerFactory<String, String> producerFactory() {
         Map<String, Object> configProps = new HashMap<>();
 
         // Basic Configuration
         configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
         // Reliability Configuration
         configProps.put(ProducerConfig.ACKS_CONFIG, acks);
@@ -66,9 +65,6 @@ public class KafkaProducerConfig {
         configProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 30000);
         configProps.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 120000);
 
-        // JSON Serializer Configuration
-        configProps.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
-
         return new DefaultKafkaProducerFactory<>(configProps);
     }
 
@@ -77,7 +73,7 @@ public class KafkaProducerConfig {
      * Template chung cho các event thông thường
      */
     @Bean
-    public KafkaTemplate<String, Object> kafkaTemplate() {
+    public KafkaTemplate<String, String> kafkaTemplate() {
         return new KafkaTemplate<>(producerFactory());
     }
 
@@ -87,12 +83,12 @@ public class KafkaProducerConfig {
      * với timeout và retry cao hơn
      */
     @Bean
-    public KafkaTemplate<String, Object> highPriorityKafkaTemplate() {
+    public KafkaTemplate<String, String> highPriorityKafkaTemplate() {
         Map<String, Object> configProps = new HashMap<>();
 
         configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
         // Higher reliability
         configProps.put(ProducerConfig.ACKS_CONFIG, "all");
@@ -104,9 +100,7 @@ public class KafkaProducerConfig {
         configProps.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 60000);
         configProps.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 300000);
 
-        configProps.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
-
-        ProducerFactory<String, Object> factory = new DefaultKafkaProducerFactory<>(configProps);
+        ProducerFactory<String, String> factory = new DefaultKafkaProducerFactory<>(configProps);
         return new KafkaTemplate<>(factory);
     }
 
@@ -115,26 +109,24 @@ public class KafkaProducerConfig {
      * Template cho analytics với performance cao hơn, reliability thấp hơn
      */
     @Bean
-    public KafkaTemplate<String, Object> analyticsKafkaTemplate() {
+    public KafkaTemplate<String, String> analyticsKafkaTemplate() {
         Map<String, Object> configProps = new HashMap<>();
 
         configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 
         // Lower reliability, higher throughput
-        configProps.put(ProducerConfig.ACKS_CONFIG, "1");  // Chỉ cần leader acknowledge
+        configProps.put(ProducerConfig.ACKS_CONFIG, "1"); // Chỉ cần leader acknowledge
         configProps.put(ProducerConfig.RETRIES_CONFIG, 1);
         configProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, false);
 
         // Larger batches
         configProps.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize * 4);
-        configProps.put(ProducerConfig.LINGER_MS_CONFIG, 50);  // Đợi lâu hơn để batch
-        configProps.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4");  // Nén tốt hơn
+        configProps.put(ProducerConfig.LINGER_MS_CONFIG, 50); // Đợi lâu hơn để batch
+        configProps.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4"); // Nén tốt hơn
 
-        configProps.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
-
-        ProducerFactory<String, Object> factory = new DefaultKafkaProducerFactory<>(configProps);
+        ProducerFactory<String, String> factory = new DefaultKafkaProducerFactory<>(configProps);
         return new KafkaTemplate<>(factory);
     }
 }
