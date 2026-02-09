@@ -6,6 +6,7 @@ import com.netfliz.encoder.constant.StringPools;
 import jakarta.validation.ValidationException;
 import org.apache.logging.log4j.util.Strings;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 import java.util.Objects;
@@ -28,6 +29,9 @@ public class JsonUtils {
 
     public static JsonNode parse(List<String> listString) {
         try {
+            if (CollectionUtils.isEmpty(listString)) {
+                return null;
+            }
             return objectMapper.valueToTree(listString);
         } catch (Exception e) {
             throw new ValidationException("Json parse error: Config is invalid");
@@ -64,6 +68,9 @@ public class JsonUtils {
 
     public static String serialize(Object object) {
         try {
+            if (Objects.isNull(object)) {
+                return StringPools.BLANK;
+            }
             return objectMapper.writeValueAsString(object);
         } catch (Exception e) {
             throw new ValidationException("Json serialize error: Config is invalid");
@@ -72,6 +79,9 @@ public class JsonUtils {
 
     public static <T> List<T> parseList(String jsonString, Class<T> clazz) {
         try {
+            if (Strings.isBlank(jsonString)) {
+                return null;
+            }
             return objectMapper.readValue(jsonString, objectMapper.getTypeFactory().constructCollectionType(List.class, clazz));
         } catch (Exception e) {
             throw new ValidationException("Json parse error: Config is invalid");

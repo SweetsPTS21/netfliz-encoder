@@ -24,7 +24,7 @@ services:
     networks:
       - netfliz-network
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/health" ]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
