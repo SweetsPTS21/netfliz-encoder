@@ -2,7 +2,7 @@ package com.netfliz.encoder.config;
 
 import com.netfliz.encoder.constant.CommonConfig;
 import com.netfliz.encoder.entity.enums.Role;
-import com.netfliz.encoder.repository.TokenRepository;
+import com.netfliz.encoder.exception.BadCredentialException;
 import com.netfliz.encoder.service.JwtService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -15,8 +15,6 @@ import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
@@ -32,8 +30,6 @@ import java.util.Set;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
-    private final TokenRepository tokenRepository;
     private static final AntPathMatcher pathMatcher = new AntPathMatcher();
 
     @Override
@@ -47,43 +43,53 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
+
         final String authHeader = request.getHeader("Authorization");
-        final String jwt;
-        final String username;
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             writeJsonForbidden(response);
             return;
         }
-        jwt = authHeader.substring(7);
-        username = jwtService.extractUsername(jwt);
+
+        final String jwt = authHeader.substring(7);
+        final String username;
+
+        try {
+            username = jwtService.extractUsername(jwt);
+        } catch (BadCredentialException e) {
+            writeJsonForbidden(response);
+            return;
+        }
+
         if (Strings.isBlank(username)) {
             writeJsonForbidden(response);
             return;
         }
 
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
-            String roleStr = jwtService.extractRole(jwt);
-            Role role = Role.valueOf(roleStr);
-
-            Set<SimpleGrantedAuthority> authorities = role.getAuthorities();
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
-
-            var isTokenValid = tokenRepository.findByToken(jwt)
-                    .map(t -> !t.isExpired() && !t.isRevoked())
-                    .orElse(false);
-            if (!jwtService.isTokenValid(jwt, userDetails) || !isTokenValid) {
+            // Validate JWT signature and expiry only (no DB query)
+            if (jwtService.isTokenExpired(jwt)) {
                 writeJsonForbidden(response);
                 return;
             }
 
+            // Extract role from JWT claims - trust gateway has validated
+            String roleStr = jwtService.extractRole(jwt);
+            Role role = Role.valueOf(roleStr);
+            Set<SimpleGrantedAuthority> authorities = role.getAuthorities();
+
+            // Create lightweight principal from JWT claims (no DB lookup)
+            JwtPrincipal principal = new JwtPrincipal(
+                    jwtService.extractClaim(jwt, claims -> claims.get("id", Long.class)),
+                    username,
+                    jwtService.extractClaim(jwt, claims -> claims.get("email", String.class)),
+                    roleStr);
+
             UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                    userDetails,
+                    principal,
                     null,
-                    authorities
-            );
+                    authorities);
             authToken.setDetails(
-                    new WebAuthenticationDetailsSource().buildDetails(request)
-            );
+                    new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authToken);
         }
         filterChain.doFilter(request, response);
@@ -105,5 +111,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             writer.write(json);
             writer.flush();
         }
+    }
+
+    public record JwtPrincipal(Long id, String username, String email, String role) {
     }
 }
